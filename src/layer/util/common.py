@@ -13,35 +13,8 @@ from scipy import optimize as spopt
 from lapsolver import solve_dense
 from sklearn.neighbors import KDTree
 import gudhi as gd
+from sklearn.metrics.pairwise import euclidean_distances
 
-"""
-A set of points in Euclidean space is given, for which,
-pairwise Euclidean distances are computed.
-"""
-
-def EuclideanDistances(points):
-    """
-    Input:
-    points: Input points in the form of a 2D NumPy array, where
-            number of rows is equal to number of points.
-    
-    Output:
-    eucDist: Pairwise Euclidean distances in the form of list of lists.
-    """
-    nPts = points.shape[0]
-
-    eucDist = []
-    for i in range(nPts):
-        eucDist_i = []
-        for j in range(i):
-            curDist = points[i,:] - points[j,:]
-            curDist = np.multiply(curDist, curDist)
-            curDist = sum(curDist)
-            curDist = np.sqrt(curDist)
-            eucDist_i.append(curDist)
-        eucDist.append(eucDist_i)
-
-    return eucDist
 
 #==============================================================================
 # Functions to compute the DTM
@@ -72,28 +45,7 @@ Determine distance to measure (DTM) based weights for the points in a point clou
 Intuitively, points in highly dense region get less weight and outliers get more weight. 
 """
 
-def DTM(X,queryPts,k):
-    '''
-    Input:
-    X: a nxd numpy array representing n points in R^d
-    queryPts:  a mxd numpy array of query points
-    k: number of nearest neighbors (NNs)
-
-    Output:
-    DTM_result: a mx1 numpy array containg the DTM (with exponent p=2) to the
-    query points.
-
-    Example:
-    X = np.array([[-1, -1], [-2, -1], [-3, -2], [1, 1], [2, 1], [3, 2]])
-    Q = np.array([[0,0],[5,5]])
-    DTMs = DTM(X,Q,3)
-    '''
-    nnDist, NN = get_kNN(X,queryPts,k)
-    dtmResult = np.sqrt(np.sum(nnDist*nnDist,axis=1) / k)
-
-    return(dtmResult)
-
-def DTM_revised(X,queryPts,k):
+def DTM_values(X,queryPts,k):
     '''
     Input:
     X: a nxd numpy array representing n points in R^d
@@ -117,57 +69,81 @@ def DTM_revised(X,queryPts,k):
 #==============================================================================
 #Functions to compute filtrations
 #==============================================================================
-def StructureW(X, F, distances, edge_max, dimension_max = 2):
+def WeightedRipsFiltration(X, F, dimension_max =2, filtration_max = np.inf):
     '''
-    Compute the Rips-W filtration of a point cloud, weighted with the DTM
-    values
-        st = StructureW(X, F, distances, dimension_max = 2)
+    Compute the weighted Rips filtration of a point cloud, weighted with the 
+    values F, and with parameter p
+    
     Input:
-    + X: a nxd numpy array representing n points in R^d
-    + F: the values of a function over the set X
-    + dim: the dimension of the skeleton of the Rips (dim_max = 1 or 2)
+    X: a nxd numpy array representing n points in R^d
+    F: an array of length n,  representing the values of a function on X
+    p: a parameter in [0, +inf) or np.inf
+    filtration_max: maximal filtration value of simplices when building the complex
+    dimension_max: maximal dimension to expand the complex
+    
     Output:
-    + st: a gd.SimplexTree with the constructed filtration (require Gudhi)
+    st: a gudhi.SimplexTree 
     '''
-    nPts = X.shape[0]
+    N_tot = X.shape[0]     
+    distances = euclidean_distances(X)          # compute the pairwise distances
+    st = gd.SimplexTree()                    # create an empty simplex tree
 
-    alpha_complex = gd.AlphaComplex(points=X)
-    st = alpha_complex.create_simplex_tree()
-    stDTM = gd.SimplexTree()
-    for simplex in st.get_filtration():
-        if len(simplex[0])==1:
-            i = simplex[0][0]
-            stDTM.insert([i], filtration  = F[i])
-        if len(simplex[0])==2:
-            i = simplex[0][0]
-            j = simplex[0][1]
-            if (j < i):
-                filtr = (distances[i][j] + F[i] + F[j])/2
-            else:
-                filtr = (distances[j][i] + F[i] + F[j])/2
-
-            stDTM.insert([i,j], filtration  = filtr)
-    stDTM.expansion(dimension_max)
-    st = stDTM
-
-    """
-    st = gd.SimplexTree()
-    for i in range(nPts):
-        st.insert([i], filtration = F[i])
-
-    for i in range(nPts):
+    for i in range(N_tot):                      # add vertices to the simplex tree
+        value = F[i]
+        if value<filtration_max:
+            st.insert([i], filtration = F[i])            
+    for i in range(N_tot):                      # add edges to the simplex tree
         for j in range(i):
-            if distances[i][j]<edge_max:
-                val = (distances[i][j] + F[i] + F[j])/2
+            value = (distances[i][j] + F[i] + F[j])/2
+            if value<filtration_max:
+                st.insert([i,j], filtration  = value)
+    
+    st.expansion(dimension_max)                 # expand the simplex tree
+
+    return st
+
+def DTM_st(X, k, dimension_max =2, filtration_max = np.inf):
+    '''
+    Compute the DTM-filtration of a point cloud, with parameters m and p
+    
+    Input:
+    X: a nxd numpy array representing n points in R^d
+    filtration_max: maximal filtration value of simplices when building the complex
+    dimension_max: maximal dimension to expand the complex
+    
+    Output:
+    st: a gudhi.SimplexTree 
+    '''
+    
+    DTM_val, NN_Dist, NN = DTM_values(X,X,k)
+    st = WeightedRipsFiltration(X, DTM_val, dimension_max, filtration_max)
+
+    return st
+
+
+
+
+
+
+def st_StructureW(X, F, distances, edge_max, dimension_max=2):
+    # distances = sci_distance.pdist(X)
+    # distances = sci_distance.squareform(distances)
+    N_points = X.shape[0]
+
+    st = gd.SimplexTree()
+    st_insert = st.insert
+ 
+    for i in range(N_points):
+        st_insert([i], filtration=F[i])
+
+    for i in range(N_points):
+        for j in range(i):
+            if distances[i, j] < edge_max:
+                val = (distances[i, j] + F[i] + F[j]) / 2
                 filtr = max([F[i], F[j], val])
-                st.insert([i,j], filtration  = filtr)
+                st_insert([i, j], filtration=filtr)
 
     st.expansion(dimension_max)
-    """
-
-    result_str = 'Complex W is of dimension ' + repr(st.dimension()) + ' - ' + \
-        repr(st.num_simplices()) + ' simplices - ' + \
-        repr(st.num_vertices()) + ' vertices.'
 
     return st
 

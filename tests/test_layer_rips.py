@@ -12,3 +12,6 @@ class TestLayerRips(unittest.TestCase):
         m = Rips(1,10)
         x = torch.Tensor([[0,1,2],[1,0,3],[2,3,0]])
         y = m(x)
+
+if __name__ == "__main__":
+    unittest.main()

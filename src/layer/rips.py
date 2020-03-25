@@ -57,8 +57,10 @@ class RipsFunction(torch.autograd.Function):
         pdSiz = len(persistence_pairs)*2 #we are going to create a flat tensor with the birth and death times
 
         diagTensor = torch.zeros(pdSiz) 
+        derMatTensor = torch.zeros(pairCnt, pairCnt, pdSiz)
 
         pdCnt = 0
+        iPD = 0
 
         for iPair in persistence_pairs:
 
@@ -75,17 +77,6 @@ class RipsFunction(torch.autograd.Function):
 
             pdCnt += 1
 
-        derMatTensor = torch.zeros(pairCnt, pairCnt, pdSiz)
-
-        iPD = 0
-
-        #import pdb; pdb.set_trace()      
-
-
-        for iPair in persistence_pairs:
-            #print('ripsLayer:forward:iPair')
-            #print(iPair)
-
             for iSimplex in iPair:
                 if len(iSimplex) > 1:
                     (ind0, ind1) = attachEdgePairDist(x, iSimplex)
@@ -94,6 +85,8 @@ class RipsFunction(torch.autograd.Function):
 
                     derMatTensor[ind0,ind1,iPD] = 1
                 iPD += 1 
+
+        
 
         #print('ripsLayer:forward:derMatTensor')
         #print(derMatTensor)
@@ -121,8 +114,8 @@ class RipsFunction(torch.autograd.Function):
 class Rips(nn.Module):
     def __init__(self, hom_dim, max_edge_len):
         super(Rips, self).__init__()
-        self.hom_dim = nn.Parameter(torch.Tensor([hom_dim]), requires_grad=False)
-        self.max_edge_len = nn.Parameter(torch.Tensor([max_edge_len]), requires_grad=False)
+        self.hom_dim = hom_dim
+        self.max_edge_len = max_edge_len
 
     def forward(self, x):
         return RipsFunction.apply(x,self.hom_dim, self.max_edge_len)

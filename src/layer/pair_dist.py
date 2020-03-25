@@ -8,7 +8,7 @@ class PairDist(torch.nn.Module):
             fun : function
                 function to compute pairwise distances.
             eps : float
-                for avoiding overflof of 1/sqrt(x)
+                for avoiding overflow of 1/sqrt(x)
         """
         super(PairDist,self).__init__()
         self.eps = 1e-6
